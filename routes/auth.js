@@ -184,6 +184,9 @@ router.post("/doctor-signup", async (req, res) => {
       available_days: null,
       available_hours: null,
       avatar_url: null,
+      location_link: null,
+      onboarding_complete: false, // Flag to track onboarding status
+      is_visible: false, // Doctor not visible to patients until onboarding is complete
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -260,7 +263,7 @@ router.post("/login", async (req, res) => {
     }
 
     // Get user profile data
-    let profileData;
+    let profileData = null;
     if (userType === "doctor") {
       const { data: doctorData, error: doctorError } = await supabase
         .from("doctors")
@@ -272,6 +275,18 @@ router.post("/login", async (req, res) => {
         console.error("Error fetching doctor data:", doctorError);
       } else {
         profileData = doctorData;
+      }
+    } else if (userType === "patient") {
+      const { data: patientData, error: patientError } = await supabase
+        .from("patients")
+        .select("*")
+        .eq("id", data.user.id)
+        .single();
+
+      if (patientError) {
+        console.error("Error fetching patient data:", patientError);
+      } else {
+        profileData = patientData;
       }
     }
 
