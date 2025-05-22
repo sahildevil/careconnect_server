@@ -56,12 +56,12 @@ router.post("/", async (req, res) => {
     const { data, error } = await supabaseAdmin
       .from("appointments")
       .insert({
-        patient_id: actualPatientId, // Use the determined patient ID
+        patient_id: actualPatientId,
         doctor_id,
         appointment_date,
         reason,
         appointment_type: appointment_type || "consultation",
-        status: "confirmed", // Changed from "scheduled" to "confirmed" - which is in the allowed list
+        status: "pending", // MODIFIED: Changed from "confirmed" to "pending"
         created_at: new Date(),
       })
       .select();
@@ -73,7 +73,8 @@ router.post("/", async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "Appointment booked successfully",
+      message:
+        "Appointment request submitted successfully. Awaiting doctor's approval.",
       appointment: data[0],
     });
   } catch (error) {
@@ -249,6 +250,53 @@ router.put("/:id/status", async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating appointment status:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// Approve or reject appointment
+router.put("/:id/approve", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { approved, notes } = req.body;
+
+    if (approved === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "The 'approved' field is required (true or false)",
+      });
+    }
+
+    // Set status based on approval decision
+    const status = approved ? "confirmed" : "canceled";
+
+    const updateData = {
+      status,
+      updated_at: new Date(),
+    };
+
+    // Add notes if provided
+    if (notes) {
+      updateData.notes = notes;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("appointments")
+      .update(updateData)
+      .eq("id", id)
+      .select();
+
+    if (error) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: approved ? "Appointment confirmed" : "Appointment rejected",
+      appointment: data[0],
+    });
+  } catch (error) {
+    console.error("Error approving/rejecting appointment:", error);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
