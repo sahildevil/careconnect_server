@@ -358,46 +358,46 @@ router.post("/logout", async (req, res) => {
 // This should be in your server's auth.js routes file
 router.post("/update-location", async (req, res) => {
   try {
-    console.log('Received location update request:', req.body);
+    console.log("Received location update request:", req.body);
     const { userId, latitude, longitude, last_location_update } = req.body;
 
     if (!userId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Patient ID is required' 
+      return res.status(400).json({
+        success: false,
+        message: "Patient ID is required",
       });
     }
 
     if (latitude === undefined || longitude === undefined) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Latitude and longitude are required' 
+      return res.status(400).json({
+        success: false,
+        message: "Latitude and longitude are required",
       });
     }
 
     // Update the patient's location in the database
     const { data, error } = await supabase
-      .from('patients')
+      .from("patients")
       .update({
         latitude,
         longitude,
-        last_location_update: last_location_update || new Date().toISOString()
+        last_location_update: last_location_update || new Date().toISOString(),
       })
-      .eq('id', userId)
+      .eq("id", userId)
       .select();
 
     if (error) {
-      console.error('Supabase update error:', error);
+      console.error("Supabase update error:", error);
       return res.status(400).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
 
-    console.log('Location updated successfully for user:', userId);
+    console.log("Location updated successfully for user:", userId);
     return res.status(200).json({
       success: true,
-      message: 'Location updated successfully'
+      message: "Location updated successfully",
     });
   } catch (error) {
     console.error("Error updating location:", error);
@@ -409,7 +409,7 @@ router.post("/update-location", async (req, res) => {
 router.get("/profile/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     if (!userId) {
       return res
         .status(400)
@@ -428,12 +428,14 @@ router.get("/profile/:userId", async (req, res) => {
     }
 
     if (!data) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     return res.status(200).json({
       success: true,
-      user: data
+      user: data,
     });
   } catch (error) {
     console.error("Error fetching user profile:", error);

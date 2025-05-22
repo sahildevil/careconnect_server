@@ -253,4 +253,67 @@ router.put("/:id/status", async (req, res) => {
   }
 });
 
+// Get available slots for a doctor
+router.get("/available-slots/:doctorId", async (req, res) => {
+  try {
+    const { doctorId } = req.params;
+    const { date } = req.query;
+
+    if (!doctorId) {
+      return res.status(400).json({
+        success: false,
+        message: "Doctor ID is required",
+      });
+    }
+
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: "Date parameter is required (YYYY-MM-DD format)",
+      });
+    }
+
+    // Convert the date string to start/end of day in UTC
+    const startDate = new Date(date);
+    startDate.setUTCHours(0, 0, 0, 0);
+
+    const endDate = new Date(date);
+    endDate.setUTCHours(23, 59, 59, 999);
+
+    // Get all booked appointments for this doctor on the specified date
+    const { data: bookedAppointments, error } = await supabase
+      .from("appointments")
+      .select("appointment_date")
+      .eq("doctor_id", doctorId)
+      .gte("appointment_date", startDate.toISOString())
+      .lte("appointment_date", endDate.toISOString())
+      .not("status", "eq", "canceled"); // Exclude canceled appointments
+
+    if (error) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    // Extract the booked times
+    const bookedTimes = bookedAppointments.map((app) => {
+      const appDate = new Date(app.appointment_date);
+      return `${appDate.getUTCHours()}:${
+        appDate.getUTCMinutes() === 0 ? "00" : "30"
+      }`;
+    });
+
+    console.log(
+      `Found ${bookedTimes.length} booked slots for doctor ${doctorId} on ${date}`
+    );
+
+    return res.status(200).json({
+      success: true,
+      bookedSlots: bookedTimes,
+      date: date,
+    });
+  } catch (error) {
+    console.error("Error fetching available slots:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 module.exports = router;
