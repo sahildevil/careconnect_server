@@ -262,65 +262,49 @@ router.post("/logout", async (req, res) => {
 });
 
 // Update user location
+// This should be in your server's auth.js routes file
 router.post("/update-location", async (req, res) => {
   try {
-    const { userId, latitude, longitude } = req.body;
-    
-    console.log("Backend received location update request:", {
-      userId, latitude, longitude
-    });
+    console.log('Received location update request:', req.body);
+    const { userId, latitude, longitude, last_location_update } = req.body;
 
-    if (!userId || latitude === undefined || longitude === undefined) {
-      console.error("Missing fields:", { userId, latitude, longitude });
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing required fields" });
+    if (!userId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Patient ID is required' 
+      });
     }
 
-    // Validate that latitude and longitude are valid numbers
-    const parsedLat = parseFloat(latitude);
-    const parsedLng = parseFloat(longitude);
-    
-    if (isNaN(parsedLat) || isNaN(parsedLng)) {
-      console.error("Invalid coordinates:", { latitude, longitude });
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid coordinates" });
+    if (latitude === undefined || longitude === undefined) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Latitude and longitude are required' 
+      });
     }
 
-    console.log("Updating location in database for user:", userId);
-    
-    // Update the user's location in the patients table
+    // Update the patient's location in the database
     const { data, error } = await supabase
-      .from("patients")
+      .from('patients')
       .update({
-        latitude: parsedLat,
-        longitude: parsedLng,
-        last_location_update: new Date(),
+        latitude,
+        longitude,
+        last_location_update: last_location_update || new Date().toISOString()
       })
-      .eq("id", userId);
+      .eq('id', userId)
+      .select();
 
     if (error) {
-      console.error("Supabase update error:", error);
-      return res.status(400).json({ success: false, message: error.message });
+      console.error('Supabase update error:', error);
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
     }
 
-    // Verify the update was successful
-    const { data: verifyData, error: verifyError } = await supabase
-      .from("patients")
-      .select("latitude, longitude, last_location_update")
-      .eq("id", userId)
-      .single();
-    
-    if (verifyError) {
-      console.error("Verification query error:", verifyError);
-    } else {
-      console.log("Verification of update data:", verifyData);
-    }
-
+    console.log('Location updated successfully for user:', userId);
     return res.status(200).json({
       success: true,
-      message: "Location updated successfully"
+      message: 'Location updated successfully'
     });
   } catch (error) {
     console.error("Error updating location:", error);
