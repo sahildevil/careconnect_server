@@ -32,7 +32,7 @@ router.post("/signup", async (req, res) => {
     }
 
     // Create user profile in the database
-    const { error: profileError } = await supabase.from("profiles").upsert(
+    const { error: profileError } = await supabase.from("patients").upsert(
       {
         id: authData.user.id,
         name,
@@ -104,7 +104,7 @@ router.post("/doctor-signup", async (req, res) => {
     }
 
     // Create user profile
-    const { error: profileError } = await supabase.from("profiles").upsert(
+    const { error: profileError } = await supabase.from("patients").upsert(
       {
         id: authData.user.id,
         name,
@@ -257,6 +257,109 @@ router.post("/logout", async (req, res) => {
       .json({ success: true, message: "Logout successful" });
   } catch (error) {
     console.error("Error logging out:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// Update user location
+router.post("/update-location", async (req, res) => {
+  try {
+    const { userId, latitude, longitude } = req.body;
+    
+    console.log("Backend received location update request:", {
+      userId, latitude, longitude
+    });
+
+    if (!userId || latitude === undefined || longitude === undefined) {
+      console.error("Missing fields:", { userId, latitude, longitude });
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
+    }
+
+    // Validate that latitude and longitude are valid numbers
+    const parsedLat = parseFloat(latitude);
+    const parsedLng = parseFloat(longitude);
+    
+    if (isNaN(parsedLat) || isNaN(parsedLng)) {
+      console.error("Invalid coordinates:", { latitude, longitude });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid coordinates" });
+    }
+
+    console.log("Updating location in database for user:", userId);
+    
+    // Update the user's location in the patients table
+    const { data, error } = await supabase
+      .from("patients")
+      .update({
+        latitude: parsedLat,
+        longitude: parsedLng,
+        last_location_update: new Date(),
+      })
+      .eq("id", userId);
+
+    if (error) {
+      console.error("Supabase update error:", error);
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    // Verify the update was successful
+    const { data: verifyData, error: verifyError } = await supabase
+      .from("patients")
+      .select("latitude, longitude, last_location_update")
+      .eq("id", userId)
+      .single();
+    
+    if (verifyError) {
+      console.error("Verification query error:", verifyError);
+    } else {
+      console.log("Verification of update data:", verifyData);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Location updated successfully"
+    });
+  } catch (error) {
+    console.error("Error updating location:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// Get user profile
+router.get("/profile/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID is required" });
+    }
+
+    // Get the user profile from the database
+    const { data, error } = await supabase
+      .from("patients")
+      .select("*")
+      .eq("id", userId)
+      .single();
+
+    if (error) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    if (!data) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      user: data
+    });
+  } catch (error) {
+    console.error("Error fetching user profile:", error);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
