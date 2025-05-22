@@ -353,4 +353,91 @@ router.post("/logout", async (req, res) => {
   }
 });
 
+// Update user location
+// This should be in your server's auth.js routes file
+router.post("/update-location", async (req, res) => {
+  try {
+    console.log('Received location update request:', req.body);
+    const { userId, latitude, longitude, last_location_update } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Patient ID is required' 
+      });
+    }
+
+    if (latitude === undefined || longitude === undefined) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Latitude and longitude are required' 
+      });
+    }
+
+    // Update the patient's location in the database
+    const { data, error } = await supabase
+      .from('patients')
+      .update({
+        latitude,
+        longitude,
+        last_location_update: last_location_update || new Date().toISOString()
+      })
+      .eq('id', userId)
+      .select();
+
+    if (error) {
+      console.error('Supabase update error:', error);
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    console.log('Location updated successfully for user:', userId);
+    return res.status(200).json({
+      success: true,
+      message: 'Location updated successfully'
+    });
+  } catch (error) {
+    console.error("Error updating location:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// Get user profile
+router.get("/profile/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID is required" });
+    }
+
+    // Get the user profile from the database
+    const { data, error } = await supabase
+      .from("patients")
+      .select("*")
+      .eq("id", userId)
+      .single();
+
+    if (error) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    if (!data) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      user: data
+    });
+  } catch (error) {
+    console.error("Error fetching user profile:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 module.exports = router;
