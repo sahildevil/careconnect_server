@@ -253,11 +253,13 @@ router.put("/:id/status", async (req, res) => {
   }
 });
 
+// Update the available slots endpoint
+
 // Get available slots for a doctor
 router.get("/available-slots/:doctorId", async (req, res) => {
   try {
     const { doctorId } = req.params;
-    const { date } = req.query;
+    const { date, timezone } = req.query;
 
     if (!doctorId) {
       return res.status(400).json({
@@ -273,12 +275,22 @@ router.get("/available-slots/:doctorId", async (req, res) => {
       });
     }
 
-    // Convert the date string to start/end of day in UTC
-    const startDate = new Date(date);
-    startDate.setUTCHours(0, 0, 0, 0);
+    // Get client timezone or default to UTC
+    const clientTimezone = timezone || "UTC";
+    console.log(
+      `Processing availability request for date ${date} in timezone ${clientTimezone}`
+    );
 
-    const endDate = new Date(date);
-    endDate.setUTCHours(23, 59, 59, 999);
+    // Convert the date string to start/end of day in UTC
+    const startDate = new Date(`${date}T00:00:00.000Z`);
+    const endDate = new Date(`${date}T23:59:59.999Z`);
+
+    console.log(
+      "Date range (UTC):",
+      startDate.toISOString(),
+      "to",
+      endDate.toISOString()
+    );
 
     // Get all booked appointments for this doctor on the specified date
     const { data: bookedAppointments, error } = await supabase
@@ -290,12 +302,20 @@ router.get("/available-slots/:doctorId", async (req, res) => {
       .not("status", "eq", "canceled"); // Exclude canceled appointments
 
     if (error) {
+      console.error("Error fetching booked appointments:", error);
       return res.status(400).json({ success: false, message: error.message });
     }
 
-    // Extract the booked times
+    // Log all booked appointments for debugging
+    console.log(
+      "Booked appointments (UTC):",
+      bookedAppointments.map((app) => app.appointment_date)
+    );
+
+    // Extract the booked times with timezone information
     const bookedTimes = bookedAppointments.map((app) => {
       const appDate = new Date(app.appointment_date);
+      // Return only hours and minutes in format suitable for comparison
       return `${appDate.getUTCHours()}:${
         appDate.getUTCMinutes() === 0 ? "00" : "30"
       }`;
@@ -304,11 +324,13 @@ router.get("/available-slots/:doctorId", async (req, res) => {
     console.log(
       `Found ${bookedTimes.length} booked slots for doctor ${doctorId} on ${date}`
     );
+    console.log("Booked slots (time only):", bookedTimes);
 
     return res.status(200).json({
       success: true,
       bookedSlots: bookedTimes,
       date: date,
+      timezone: "UTC", // Explicitly tell the client these times are in UTC
     });
   } catch (error) {
     console.error("Error fetching available slots:", error);
