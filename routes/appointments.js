@@ -26,17 +26,26 @@ router.get("/user/:userId", async (req, res) => {
 // Book a new appointment
 router.post("/", async (req, res) => {
   try {
-    const { user_id, doctor_id, appointment_date, reason, appointment_type } =
-      req.body;
+    const {
+      patient_id,
+      user_id,
+      doctor_id,
+      appointment_date,
+      reason,
+      appointment_type,
+    } = req.body;
 
-    if (!user_id || !doctor_id || !appointment_date) {
+    // Use patient_id as primary, fallback to user_id if patient_id isn't provided
+    const actualPatientId = patient_id || user_id;
+
+    if (!actualPatientId || !doctor_id || !appointment_date) {
       return res
         .status(400)
         .json({ success: false, message: "Missing required fields" });
     }
 
     console.log("Creating appointment with data:", {
-      patient_id: user_id,
+      patient_id: actualPatientId,
       doctor_id,
       appointment_date,
       reason,
@@ -47,12 +56,12 @@ router.post("/", async (req, res) => {
     const { data, error } = await supabaseAdmin
       .from("appointments")
       .insert({
-        patient_id: user_id, // Map user_id from request to patient_id in database
+        patient_id: actualPatientId, // Use the determined patient ID
         doctor_id,
         appointment_date,
         reason,
         appointment_type: appointment_type || "consultation",
-        status: "scheduled", // Changed from "pending" to "scheduled"
+        status: "confirmed", // Changed from "scheduled" to "confirmed" - which is in the allowed list
         created_at: new Date(),
       })
       .select();
