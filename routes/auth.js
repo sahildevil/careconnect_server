@@ -300,6 +300,7 @@ router.post("/login", async (req, res) => {
         user_type: userMetadata.user_type,
         profile: profileData,
       },
+      token: data.session.access_token, // Make sure to include this
       session: data.session,
     });
   } catch (error) {
