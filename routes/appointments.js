@@ -52,7 +52,7 @@ router.post("/", async (req, res) => {
         appointment_date,
         reason,
         appointment_type: appointment_type || "consultation",
-        status: "pending", // Using 'pending' as default per your schema
+        status: "scheduled", // Changed from "pending" to "scheduled"
         created_at: new Date(),
       })
       .select();
@@ -73,14 +73,14 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Cancel appointment
+// Update cancel appointment route
 router.put("/:id/cancel", async (req, res) => {
   try {
     const { id } = req.params;
 
     const { data, error } = await supabaseAdmin
       .from("appointments")
-      .update({ status: "cancelled", updated_at: new Date() })
+      .update({ status: "canceled", updated_at: new Date() }) // Changed from "cancelled" to "canceled"
       .eq("id", id)
       .select();
 
@@ -131,26 +131,52 @@ router.get("/doctor", async (req, res) => {
 // Get patient's appointments
 router.get("/patient", async (req, res) => {
   try {
-    // Get the patient ID from the authenticated user
-    const user = req.user; // Assuming authentication middleware sets this
-    const patientId = user ? user.id : req.query.user_id;
+    // Log all incoming query parameters to help debug
+    console.log("Query parameters:", req.query);
+
+    // Get the patient ID from the authenticated user or query parameter
+    const authHeader = req.headers.authorization;
+    let patientId = req.query.user_id;
+
+    console.log("Initial patient ID from query:", patientId);
+
+    // If we have an auth header, try to extract the user ID from it
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.substring(7, authHeader.length);
+      try {
+        const { data } = await supabase.auth.getUser(token);
+        if (data && data.user) {
+          patientId = data.user.id;
+          console.log("Got patient ID from token:", patientId);
+        }
+      } catch (authError) {
+        console.error("Auth error:", authError);
+        // Continue with the query param user_id if auth extraction fails
+      }
+    }
 
     if (!patientId) {
+      console.error("No patient ID available");
       return res
         .status(400)
         .json({ success: false, message: "Patient ID is required" });
     }
 
+    console.log("Using patient ID:", patientId);
     const { data, error } = await supabase
       .from("appointments")
       .select("*, doctors(*)")
-      .eq("patient_id", patientId); // Changed from user_id to patient_id
+      .eq("patient_id", patientId);
 
     if (error) {
+      console.error("Supabase error:", error);
       return res.status(400).json({ success: false, message: error.message });
     }
 
-    return res.status(200).json({ success: true, appointments: data });
+    console.log(
+      `Found ${data ? data.length : 0} appointments for patient ${patientId}`
+    );
+    return res.status(200).json({ success: true, appointments: data || [] });
   } catch (error) {
     console.error("Error fetching patient appointments:", error);
     return res.status(500).json({ success: false, message: "Server error" });
