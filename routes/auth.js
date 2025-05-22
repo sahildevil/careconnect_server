@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
-const supabase = require("../config/supabase");
+const { supabase, supabaseAdmin } = require("../config/supabase");
 
-// Register a patient
+// Register a patient - Update this section
 router.post("/signup", async (req, res) => {
   try {
     const { name, email, password, phone_number } = req.body;
@@ -13,39 +13,79 @@ router.post("/signup", async (req, res) => {
         .json({ success: false, message: "All fields are required" });
     }
 
-    // Create user in Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
+    // Directly try to create the user without checking first
+    const { data: authData, error: authError } =
+      await supabaseAdmin.auth.admin.createUser({
+        email: email.toLowerCase(),
+        password,
+        email_confirm: true,
+        user_metadata: {
           name,
           user_type: "patient",
         },
-      },
-    });
+      });
 
     if (authError) {
-      return res
-        .status(400)
-        .json({ success: false, message: authError.message });
+      console.error("Auth error:", authError);
+
+      // Check if this is a duplicate email error
+      if (
+        authError.message &&
+        (authError.message.includes("already been registered") ||
+          authError.message.includes("already exists"))
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Email is already registered",
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: authError.message,
+      });
+    }
+
+    // Rest of your code remains the same...
+    if (!authData || !authData.user) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to create user account",
+      });
     }
 
     // Create user profile in the database
-    const { error: profileError } = await supabase.from("profiles").upsert(
-      {
+    const { error: profileError } = await supabaseAdmin
+      .from("patients")
+      .insert({
         id: authData.user.id,
         name,
-        email,
-        phone_number,
-        user_type: "patient",
+        email: email.toLowerCase(),
+        phone_number: phone_number || null,
+        gender: null,
+        date_of_birth: null,
+        blood_group: null,
+        address: null,
+        emergency_contact_name: null,
+        emergency_contact_phone: null,
         created_at: new Date(),
-      },
-      { onConflict: "id" }
-    );
+        updated_at: new Date(),
+      });
 
     if (profileError) {
-      console.error("Profile creation error:", profileError);
+      console.error("Patient profile creation error:", profileError);
+
+      // Try to clean up the auth user if profile creation fails
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+      } catch (deleteError) {
+        console.error("Error deleting auth user:", deleteError);
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: profileError.message || "Failed to create patient profile",
+      });
     }
 
     return res.status(201).json({
@@ -59,13 +99,17 @@ router.post("/signup", async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering patient:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
   }
 });
 
-// Register a doctor
+// Register a doctor - Update this section
 router.post("/doctor-signup", async (req, res) => {
   try {
+    console.log("Doctor signup request:", req.body);
     const {
       name,
       email,
@@ -77,64 +121,94 @@ router.post("/doctor-signup", async (req, res) => {
     } = req.body;
 
     if (!name || !email || !password || !specialty) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "All required fields must be provided",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "All required fields must be provided",
+      });
     }
 
-    // Create user in Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
+    // Directly try to create the user without checking first
+    // If the email exists, Supabase will return an appropriate error
+    const { data: authData, error: authError } =
+      await supabaseAdmin.auth.admin.createUser({
+        email: email.toLowerCase(),
+        password,
+        email_confirm: true,
+        user_metadata: {
           name,
           user_type: "doctor",
+          phone_number,
         },
-      },
-    });
+      });
 
+    // Handle specific auth error for existing user
     if (authError) {
-      return res
-        .status(400)
-        .json({ success: false, message: authError.message });
+      console.error("Auth error:", authError);
+
+      // Check if this is a duplicate email error
+      if (
+        authError.message &&
+        (authError.message.includes("already been registered") ||
+          authError.message.includes("already exists"))
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Email is already registered",
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: authError.message || "Authentication error",
+      });
     }
 
-    // Create user profile
-    const { error: profileError } = await supabase.from("profiles").upsert(
-      {
-        id: authData.user.id,
-        name,
-        email,
-        phone_number,
-        user_type: "doctor",
-        created_at: new Date(),
-      },
-      { onConflict: "id" }
-    );
-
-    if (profileError) {
-      console.error("Profile creation error:", profileError);
+    // Rest of your code remains the same
+    if (!authData || !authData.user) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to create user account",
+      });
     }
 
-    // Create doctor record
-    const { error: doctorError } = await supabase.from("doctors").insert({
+    // Create doctor record in the database
+    const doctorData = {
       id: authData.user.id,
       name,
       specialty,
-      qualification,
       experience: experience || 0,
+      qualification: qualification || "",
+      bio: "",
+      consultation_fee: 0,
+      rating: 0,
+      available_days: null,
+      available_hours: null,
+      avatar_url: null,
       created_at: new Date(),
-    });
+      updated_at: new Date(),
+    };
+
+    console.log("Inserting doctor record:", doctorData);
+    // Use supabaseAdmin instead of supabase for insertion
+    const { error: doctorError } = await supabaseAdmin
+      .from("doctors")
+      .insert(doctorData);
 
     if (doctorError) {
       console.error("Doctor creation error:", doctorError);
-      return res
-        .status(400)
-        .json({ success: false, message: doctorError.message });
+
+      // Clean up the auth user if doctor profile creation fails
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+        console.log("Deleted auth user after doctor creation failed");
+      } catch (deleteError) {
+        console.error("Error deleting auth user:", deleteError);
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: doctorError.message || "Failed to create doctor profile",
+      });
     }
 
     return res.status(201).json({
@@ -148,7 +222,10 @@ router.post("/doctor-signup", async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering doctor:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
   }
 });
 
