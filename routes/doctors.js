@@ -51,51 +51,48 @@ router.post("/complete-onboarding", async (req, res) => {
       consultation_fee,
       available_days,
       available_hours,
-      location_link,
       bio,
+      location_link,
+      latitude,
+      longitude,
     } = req.body;
 
-    if (
-      !doctor_id ||
-      !consultation_fee ||
-      !available_days ||
-      !available_hours
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "All required fields must be provided",
-      });
+    if (!doctor_id) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Doctor ID is required" });
     }
 
-    // Update the doctor record
-    const { error: updateError } = await supabaseAdmin
+    // Update the doctor record with the onboarding data
+    const { data, error } = await supabaseAdmin
       .from("doctors")
       .update({
         consultation_fee,
         available_days,
         available_hours,
+        bio: bio || null,
         location_link: location_link || null,
-        bio: bio || "",
+        latitude: latitude || null,
+        longitude: longitude || null,
         onboarding_complete: true,
         is_visible: true,
         updated_at: new Date(),
       })
-      .eq("id", doctor_id);
+      .eq("id", doctor_id)
+      .select();
 
-    if (updateError) {
-      console.error("Error updating doctor onboarding:", updateError);
-      return res.status(400).json({
-        success: false,
-        message: updateError.message || "Failed to complete onboarding",
-      });
+    if (error) {
+      console.error("Error updating doctor onboarding:", error);
+      return res.status(400).json({ success: false, message: error.message });
     }
 
     return res.status(200).json({
       success: true,
       message: "Onboarding completed successfully",
+      doctor: data[0],
     });
   } catch (error) {
-    console.error("Error completing onboarding:", error);
+    console.error("Error in complete-onboarding:", error);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
