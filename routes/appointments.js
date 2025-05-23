@@ -138,35 +138,39 @@ router.get("/doctor", async (req, res) => {
   }
 });
 
-// Get patient's appointments
+// Modify the patient appointments route
 router.get("/patient", async (req, res) => {
   try {
-    // Log all incoming query parameters to help debug
-    console.log("Query parameters:", req.query);
-
-    // Get the patient ID from the authenticated user or query parameter
+    // Get the patient ID from token only, don't use query parameters
     const authHeader = req.headers.authorization;
-    let patientId = req.query.user_id;
+    let patientId = null;
 
-    console.log("Initial patient ID from query:", patientId);
+    // Extract patient ID from token
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required" });
+    }
 
-    // If we have an auth header, try to extract the user ID from it
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      const token = authHeader.substring(7, authHeader.length);
-      try {
-        const { data } = await supabase.auth.getUser(token);
-        if (data && data.user) {
-          patientId = data.user.id;
-          console.log("Got patient ID from token:", patientId);
-        }
-      } catch (authError) {
-        console.error("Auth error:", authError);
-        // Continue with the query param user_id if auth extraction fails
+    const token = authHeader.substring(7, authHeader.length);
+    try {
+      const { data } = await supabase.auth.getUser(token);
+      if (data && data.user) {
+        patientId = data.user.id;
+        console.log("Got patient ID from token:", patientId);
+      } else {
+        return res
+          .status(401)
+          .json({ success: false, message: "Invalid authentication token" });
       }
+    } catch (authError) {
+      console.error("Auth error:", authError);
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication error" });
     }
 
     if (!patientId) {
-      console.error("No patient ID available");
       return res
         .status(400)
         .json({ success: false, message: "Patient ID is required" });

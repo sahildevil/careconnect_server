@@ -482,4 +482,68 @@ router.get("/validate-token", async (req, res) => {
   }
 });
 
+// Add this endpoint if it doesn't exist already
+router.get("/profile", async (req, res) => {
+  try {
+    // Get user ID from the auth token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required" });
+    }
+
+    const token = authHeader.substring(7, authHeader.length);
+    const { data: userData, error: userError } = await supabase.auth.getUser(
+      token
+    );
+
+    if (userError || !userData.user) {
+      return res.status(401).json({ success: false, message: "Invalid token" });
+    }
+
+    const userId = userData.user.id;
+
+    // First check if user is a patient
+    let { data: patientData, error: patientError } = await supabase
+      .from("patients")
+      .select("*")
+      .eq("id", userId)
+      .single();
+
+    let userType = "patient";
+
+    if (patientError || !patientData) {
+      // If not a patient, try doctor
+      const { data: doctorData, error: doctorError } = await supabase
+        .from("doctors")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (doctorError || !doctorData) {
+        return res
+          .status(404)
+          .json({ success: false, message: "User profile not found" });
+      }
+
+      userType = "doctor";
+      patientData = doctorData;
+    }
+
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: userId,
+        email: userData.user.email,
+        user_type: userType,
+        profile: patientData,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching profile:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 module.exports = router;
