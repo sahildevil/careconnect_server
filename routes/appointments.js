@@ -197,18 +197,35 @@ router.get("/patient", async (req, res) => {
   }
 });
 
-// Get appointment by ID
+// Update the appointment detail endpoint
+
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
     const { data, error } = await supabase
       .from("appointments")
-      .select("*, doctors(*), patients:patient_id(*)") // Changed from user_id to patient_id
+      .select(
+        `
+        *,
+        doctors:doctor_id (
+          id, 
+          name, 
+          email, 
+          specialty, 
+          avatar_url, 
+          latitude, 
+          longitude, 
+          location_link
+        ),
+        patients:patient_id (*)
+      `
+      )
       .eq("id", id)
       .single();
 
     if (error) {
+      console.error("Error fetching appointment:", error);
       return res.status(400).json({ success: false, message: error.message });
     }
 
