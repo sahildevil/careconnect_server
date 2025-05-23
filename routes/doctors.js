@@ -97,7 +97,59 @@ router.post("/complete-onboarding", async (req, res) => {
   }
 });
 
-// Add or update the onboarding status endpoint
+router.put("/profile", async (req, res) => {
+  try {
+    // Extract doctor ID from JWT token (assuming you have auth middleware)
+    const doctorId = req.user?.id;
+    
+    if (!doctorId) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "Authentication required" 
+      });
+    }
+
+    const {
+      name,
+      phone_number,
+      specialty,
+      bio,
+      consultation_fee,
+      qualification,
+      available_hours,
+    } = req.body;
+
+    // Update the doctor record
+    const { data, error } = await supabaseAdmin
+      .from("doctors")
+      .update({
+        name,
+        phone_number,
+        specialty,
+        bio,
+        consultation_fee,
+        qualification,
+        available_hours,
+        updated_at: new Date(),
+      })
+      .eq("id", doctorId)
+      .select();
+
+    if (error) {
+      console.error("Error updating doctor profile:", error);
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      doctor: data[0],
+    });
+  } catch (error) {
+    console.error("Error updating doctor profile:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 router.get("/onboarding-status/:id", async (req, res) => {
   try {
     const { id } = req.params;
