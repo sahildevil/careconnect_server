@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const reminderService = require("./services/reminderService");
 
 // Import routes
 const authRoutes = require("./routes/auth");
@@ -33,4 +34,21 @@ app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+
+  // Start the reminder service
+  reminderService.start();
+  console.log("Appointment reminder service initialized");
+});
+
+// Graceful shutdown
+process.on("SIGINT", () => {
+  console.log("Shutting down server...");
+  reminderService.stop();
+  process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+  console.log("Shutting down server...");
+  reminderService.stop();
+  process.exit(0);
 });

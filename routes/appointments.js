@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { supabase, supabaseAdmin } = require("../config/supabase");
 const { sendNotification } = require("./notifications");
+const reminderService = require("../services/reminderService");
 
 // Get user appointments
 router.get("/user/:userId", async (req, res) => {
@@ -150,12 +151,10 @@ router.get("/doctor", async (req, res) => {
 
     if (doctorCheckError || !doctorCheck) {
       console.error("Doctor verification failed:", doctorCheckError);
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "User is not a doctor or doctor not found",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "User is not a doctor or doctor not found",
+      });
     }
 
     console.log("Doctor verified:", doctorCheck.name);
@@ -522,6 +521,101 @@ router.get("/available-slots/:doctorId", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching available slots:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// Manual reminder endpoint (for testing)
+router.post("/:id/send-reminder", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verify authentication
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required" });
+    }
+
+    const token = authHeader.substring(7, authHeader.length);
+    const { data: userData, error: userError } = await supabase.auth.getUser(
+      token
+    );
+
+    if (userError || !userData.user) {
+      return res.status(401).json({ success: false, message: "Invalid token" });
+    }
+
+    // Send manual reminder
+    const result = await reminderService.sendManualReminder(id);
+
+    if (result.success) {
+      return res.status(200).json({
+        success: true,
+        message: "Reminder sent successfully",
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: result.error || "Failed to send reminder",
+      });
+    }
+  } catch (error) {
+    console.error("Error sending manual reminder:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// Add this test endpoint
+
+router.post("/test-reminder-system", async (req, res) => {
+  try {
+    // Verify authentication
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required" });
+    }
+
+    // Get confirmed appointments in the next 2 hours for testing
+    const now = new Date();
+    const testEnd = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours from now
+
+    const { data: appointments, error } = await supabase
+      .from("appointments")
+      .select(
+        `
+        id,
+        appointment_date,
+        patients:patient_id (name),
+        doctors:doctor_id (name)
+      `
+      )
+      .eq("status", "confirmed")
+      .gte("appointment_date", now.toISOString())
+      .lte("appointment_date", testEnd.toISOString());
+
+    if (error) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Found ${
+        appointments?.length || 0
+      } confirmed appointments in next 2 hours`,
+      appointments:
+        appointments?.map((apt) => ({
+          id: apt.id,
+          date: apt.appointment_date,
+          patient: apt.patients?.name,
+          doctor: apt.doctors?.name,
+        })) || [],
+    });
+  } catch (error) {
+    console.error("Error testing reminder system:", error);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
