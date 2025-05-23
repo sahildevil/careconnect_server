@@ -410,32 +410,75 @@ router.get("/profile/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
 
-    if (!userId) {
+    // Verify the token matches the requested user ID
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res
-        .status(400)
-        .json({ success: false, message: "User ID is required" });
+        .status(401)
+        .json({ success: false, message: "Authentication required" });
     }
 
-    // Get the user profile from the database
-    const { data, error } = await supabase
-      .from("patients")
+    const token = authHeader.substring(7, authHeader.length);
+    const { data: userData, error: userError } = await supabase.auth.getUser(
+      token
+    );
+
+    if (userError || !userData.user) {
+      return res.status(401).json({ success: false, message: "Invalid token" });
+    }
+
+    // Ensure the token user matches the requested user
+    if (userData.user.id !== userId) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    // Get user profile based on user type
+    let userProfile = null;
+
+    // Check if it's a doctor
+    const { data: doctorData, error: doctorError } = await supabase
+      .from("doctors")
       .select("*")
       .eq("id", userId)
       .single();
 
-    if (error) {
-      return res.status(400).json({ success: false, message: error.message });
+    if (doctorData && !doctorError) {
+      userProfile = {
+        ...doctorData,
+        user_type: "doctor",
+      };
+    } else {
+      // Check if it's a patient
+      const { data: patientData, error: patientError } = await supabase
+        .from("patients")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (patientData && !patientError) {
+        userProfile = {
+          ...patientData,
+          user_type: "patient",
+        };
+      }
     }
 
-    if (!data) {
+    if (!userProfile) {
       return res
         .status(404)
-        .json({ success: false, message: "User not found" });
+        .json({ success: false, message: "User profile not found" });
     }
+
+    console.log(
+      "Profile retrieved for user:",
+      userId,
+      "type:",
+      userProfile.user_type
+    );
 
     return res.status(200).json({
       success: true,
-      user: data,
+      user: userProfile,
     });
   } catch (error) {
     console.error("Error fetching user profile:", error);

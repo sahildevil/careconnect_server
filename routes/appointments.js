@@ -62,7 +62,7 @@ router.post("/", async (req, res) => {
         appointment_date,
         reason,
         appointment_type: appointment_type || "consultation",
-        status: "pending", 
+        status: "pending",
         created_at: new Date(),
       })
       .select();
@@ -110,29 +110,88 @@ router.put("/:id/cancel", async (req, res) => {
   }
 });
 
-// Get doctor's appointments
+// Update the doctor appointments endpoint with better debugging
+
 router.get("/doctor", async (req, res) => {
   try {
-    // Get the doctor ID from the authenticated user
-    const user = req.user; 
-    const doctorId = user ? user.id : req.query.doctor_id;
+    // Get the doctor ID from the authenticated user or query parameter
+    const { doctor_id } = req.query;
 
-    if (!doctorId) {
+    // Get user from token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res
-        .status(400)
-        .json({ success: false, message: "Doctor ID is required" });
+        .status(401)
+        .json({ success: false, message: "Authentication required" });
     }
 
+    const token = authHeader.substring(7, authHeader.length);
+    const { data: userData, error: userError } = await supabase.auth.getUser(
+      token
+    );
+
+    if (userError || !userData.user) {
+      return res.status(401).json({ success: false, message: "Invalid token" });
+    }
+
+    // Use the doctor_id from query or the authenticated user's ID
+    const finalDoctorId = doctor_id || userData.user.id;
+
+    console.log("Fetching appointments for doctor ID:", finalDoctorId);
+    console.log("Token user ID:", userData.user.id);
+    console.log("Query doctor_id:", doctor_id);
+
+    // Verify the user is actually a doctor
+    const { data: doctorCheck, error: doctorCheckError } = await supabase
+      .from("doctors")
+      .select("id, name")
+      .eq("id", finalDoctorId)
+      .single();
+
+    if (doctorCheckError || !doctorCheck) {
+      console.error("Doctor verification failed:", doctorCheckError);
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "User is not a doctor or doctor not found",
+        });
+    }
+
+    console.log("Doctor verified:", doctorCheck.name);
+
+    // Get appointments for this doctor
     const { data, error } = await supabase
       .from("appointments")
-      .select("*, patients:patient_id(*)") 
-      .eq("doctor_id", doctorId);
+      .select("*, patients:patient_id(*)")
+      .eq("doctor_id", finalDoctorId)
+      .order("appointment_date", { ascending: true });
 
     if (error) {
+      console.error("Error fetching appointments:", error);
       return res.status(400).json({ success: false, message: error.message });
     }
 
-    return res.status(200).json({ success: true, appointments: data });
+    console.log(
+      `Found ${data?.length || 0} appointments for doctor ${finalDoctorId} (${
+        doctorCheck.name
+      })`
+    );
+
+    // Log appointment details for debugging
+    if (data && data.length > 0) {
+      console.log(
+        "Appointment details:",
+        data.map((apt) => ({
+          id: apt.id,
+          date: apt.appointment_date,
+          status: apt.status,
+          patient: apt.patients?.name || "Unknown",
+        }))
+      );
+    }
+
+    return res.status(200).json({ success: true, appointments: data || [] });
   } catch (error) {
     console.error("Error fetching doctor appointments:", error);
     return res.status(500).json({ success: false, message: "Server error" });
