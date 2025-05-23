@@ -210,8 +210,7 @@ router.get("/:id", async (req, res) => {
         *,
         doctors:doctor_id (
           id, 
-          name, 
-          email, 
+          name,  
           specialty, 
           avatar_url, 
           latitude, 
