@@ -486,7 +486,8 @@ router.get("/profile/:userId", async (req, res) => {
   }
 });
 
-// Add this new endpoint
+// Add this improved validate-token endpoint
+
 router.get("/validate-token", async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -504,24 +505,69 @@ router.get("/validate-token", async (req, res) => {
     const { data, error } = await supabase.auth.getUser(token);
 
     if (error || !data.user) {
+      console.log("Token validation failed:", error?.message);
       return res.status(401).json({
         success: false,
-        message: "Invalid token",
+        message: "Invalid or expired token",
       });
     }
 
-    // Token is valid
+    // Get updated user profile
+    const userId = data.user.id;
+    let userProfile = null;
+
+    // Check if it's a doctor
+    const { data: doctorData, error: doctorError } = await supabase
+      .from("doctors")
+      .select("*")
+      .eq("id", userId)
+      .single();
+
+    if (doctorData && !doctorError) {
+      userProfile = {
+        id: userId,
+        email: data.user.email,
+        name: doctorData.name,
+        user_type: "doctor",
+        profile: doctorData,
+      };
+    } else {
+      // Check if it's a patient
+      const { data: patientData, error: patientError } = await supabase
+        .from("patients")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (patientData && !patientError) {
+        userProfile = {
+          id: userId,
+          email: data.user.email,
+          name: patientData.name,
+          user_type: "patient",
+          profile: patientData,
+        };
+      }
+    }
+
+    if (!userProfile) {
+      return res.status(404).json({
+        success: false,
+        message: "User profile not found",
+      });
+    }
+
     return res.status(200).json({
       success: true,
       message: "Token is valid",
-      user: {
-        id: data.user.id,
-        email: data.user.email,
-      },
+      user: userProfile,
     });
   } catch (error) {
     console.error("Error validating token:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: "Server error during token validation",
+    });
   }
 });
 
