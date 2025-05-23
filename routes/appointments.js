@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { supabase, supabaseAdmin } = require("../config/supabase");
+const { sendNotification } = require("./notifications");
 
 // Get user appointments
 router.get("/user/:userId", async (req, res) => {
@@ -61,7 +62,7 @@ router.post("/", async (req, res) => {
         appointment_date,
         reason,
         appointment_type: appointment_type || "consultation",
-        status: "pending", // MODIFIED: Changed from "confirmed" to "pending"
+        status: "pending", 
         created_at: new Date(),
       })
       .select();
@@ -90,7 +91,7 @@ router.put("/:id/cancel", async (req, res) => {
 
     const { data, error } = await supabaseAdmin
       .from("appointments")
-      .update({ status: "canceled", updated_at: new Date() }) // Changed from "cancelled" to "canceled"
+      .update({ status: "canceled", updated_at: new Date() })
       .eq("id", id)
       .select();
 
@@ -113,7 +114,7 @@ router.put("/:id/cancel", async (req, res) => {
 router.get("/doctor", async (req, res) => {
   try {
     // Get the doctor ID from the authenticated user
-    const user = req.user; // Assuming authentication middleware sets this
+    const user = req.user; 
     const doctorId = user ? user.id : req.query.doctor_id;
 
     if (!doctorId) {
@@ -124,7 +125,7 @@ router.get("/doctor", async (req, res) => {
 
     const { data, error } = await supabase
       .from("appointments")
-      .select("*, patients:patient_id(*)") // Changed from user_id to patient_id
+      .select("*, patients:patient_id(*)") 
       .eq("doctor_id", doctorId);
 
     if (error) {
@@ -141,11 +142,8 @@ router.get("/doctor", async (req, res) => {
 // Modify the patient appointments route
 router.get("/patient", async (req, res) => {
   try {
-    // Get the patient ID from token only, don't use query parameters
     const authHeader = req.headers.authorization;
     let patientId = null;
-
-    // Extract patient ID from token
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res
         .status(401)
@@ -287,6 +285,25 @@ router.put("/:id/approve", async (req, res) => {
       });
     }
 
+    // First, get the appointment to identify the patient
+    const { data: appointmentData, error: appointmentError } = await supabase
+      .from("appointments")
+      .select("*, patients:patient_id(*), doctors:doctor_id(*)")
+      .eq("id", id)
+      .single();
+
+    if (appointmentError) {
+      return res
+        .status(400)
+        .json({ success: false, message: appointmentError.message });
+    }
+
+    if (!appointmentData) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Appointment not found" });
+    }
+
     // Set status based on approval decision
     const status = approved ? "confirmed" : "canceled";
 
@@ -300,6 +317,7 @@ router.put("/:id/approve", async (req, res) => {
       updateData.notes = notes;
     }
 
+    // Update the appointment status
     const { data, error } = await supabaseAdmin
       .from("appointments")
       .update(updateData)
@@ -308,6 +326,49 @@ router.put("/:id/approve", async (req, res) => {
 
     if (error) {
       return res.status(400).json({ success: false, message: error.message });
+    }
+
+    // Send notification based on approval decision
+    if (appointmentData.patient_id) {
+      const patientId = appointmentData.patient_id;
+      const doctorName = appointmentData.doctors?.name || "Your doctor";
+      const appointmentDate = new Date(appointmentData.appointment_date);
+
+      // Format appointment date in a readable format
+      const formattedDate = appointmentDate.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+
+      const formattedTime = appointmentDate.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      if (approved) {
+        // Send confirmation notification
+        const notificationResult = await sendNotification(
+          patientId,
+          "Appointment Confirmed",
+          `Your appointment with Dr. ${doctorName} on ${formattedDate} at ${formattedTime} has been confirmed.`,
+          "appointment_confirmed",
+          id
+        );
+        console.log("Confirmation notification result:", notificationResult);
+      } else {
+        // Send rejection notification
+        const notificationResult = await sendNotification(
+          patientId,
+          "Appointment Declined",
+          `Your appointment with Dr. ${doctorName} on ${formattedDate} at ${formattedTime} was declined. ${
+            notes ? `Reason: ${notes}` : ""
+          }`,
+          "appointment_rejected",
+          id
+        );
+        console.log("Rejection notification result:", notificationResult);
+      }
     }
 
     return res.status(200).json({
