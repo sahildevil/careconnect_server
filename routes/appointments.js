@@ -462,6 +462,31 @@ router.get("/available-slots/:doctorId", async (req, res) => {
       });
     }
 
+    // IMPORTANT: Verify authentication to ensure proper user context
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required for slot checking",
+      });
+    }
+
+    const token = authHeader.substring(7, authHeader.length);
+    const { data: userData, error: userError } = await supabase.auth.getUser(
+      token
+    );
+
+    if (userError || !userData.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid authentication token",
+      });
+    }
+
+    console.log(
+      `User ${userData.user.id} checking slots for doctor ${doctorId} on ${date}`
+    );
+
     // Get client timezone or default to UTC
     const clientTimezone = timezone || "UTC";
     console.log(
@@ -479,14 +504,15 @@ router.get("/available-slots/:doctorId", async (req, res) => {
       endDate.toISOString()
     );
 
-    // Get all booked appointments for this doctor on the specified date
-    const { data: bookedAppointments, error } = await supabase
+    // CRITICAL: Use supabaseAdmin to bypass RLS and get ALL appointments for this doctor/date
+    // This ensures we get the complete picture regardless of which user is asking
+    const { data: bookedAppointments, error } = await supabaseAdmin
       .from("appointments")
-      .select("appointment_date")
+      .select("appointment_date, status, patient_id, patients:patient_id(name)")
       .eq("doctor_id", doctorId)
       .gte("appointment_date", startDate.toISOString())
       .lte("appointment_date", endDate.toISOString())
-      .not("status", "eq", "canceled"); // Exclude canceled appointments
+      .in("status", ["pending", "confirmed", "scheduled"]); // All active appointment statuses
 
     if (error) {
       console.error("Error fetching booked appointments:", error);
@@ -495,29 +521,44 @@ router.get("/available-slots/:doctorId", async (req, res) => {
 
     // Log all booked appointments for debugging
     console.log(
-      "Booked appointments (UTC):",
-      bookedAppointments.map((app) => app.appointment_date)
+      "All booked appointments for this date:",
+      bookedAppointments?.map((app) => ({
+        time: app.appointment_date,
+        status: app.status,
+        patient: app.patients?.name || "Unknown",
+      }))
     );
 
-    // Extract the booked times with timezone information
-    const bookedTimes = bookedAppointments.map((app) => {
-      const appDate = new Date(app.appointment_date);
-      // Return only hours and minutes in format suitable for comparison
-      return `${appDate.getUTCHours()}:${
-        appDate.getUTCMinutes() === 0 ? "00" : "30"
-      }`;
-    });
+    // Extract the booked times in the format expected by the client
+    const bookedTimes =
+      bookedAppointments?.map((app) => {
+        const appDate = new Date(app.appointment_date);
+        // Return hours:minutes format (24-hour)
+        const hours = appDate.getUTCHours().toString().padStart(2, "0");
+        const minutes = appDate.getUTCMinutes().toString().padStart(2, "0");
+        return `${hours}:${minutes}`;
+      }) || [];
 
     console.log(
       `Found ${bookedTimes.length} booked slots for doctor ${doctorId} on ${date}`
     );
-    console.log("Booked slots (time only):", bookedTimes);
+    console.log("Booked slots (UTC times):", bookedTimes);
+
+    // Add cache-busting headers to prevent caching issues
+    res.set({
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+    });
 
     return res.status(200).json({
       success: true,
       bookedSlots: bookedTimes,
       date: date,
-      timezone: "UTC", // Explicitly tell the client these times are in UTC
+      timezone: "UTC",
+      totalBookings: bookedAppointments?.length || 0,
+      requestedBy: userData.user.id, // Add this for debugging
+      timestamp: new Date().toISOString(), // Add timestamp to ensure fresh data
     });
   } catch (error) {
     console.error("Error fetching available slots:", error);
