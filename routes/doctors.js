@@ -1,6 +1,24 @@
 const express = require("express");
 const router = express.Router();
 const { supabase, supabaseAdmin } = require("../config/supabase");
+const multer = require('multer');
+const path = require('path');
+
+// Configure multer for file upload
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // Limit to 5MB
+  fileFilter: (req, file, callback) => {
+    const filetypes = /jpeg|jpg|png|webp/;
+    const mimetype = filetypes.test(file.mimetype);
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    
+    if (mimetype && extname) {
+      return callback(null, true);
+    }
+    callback(new Error('Only image files are allowed!'));
+  }
+});
 
 // Get all doctors
 router.get("/", async (req, res) => {
@@ -182,6 +200,89 @@ router.get("/onboarding-status/:id", async (req, res) => {
       success: false,
       message: "Server error",
     });
+  }
+});
+
+// Add the endpoint for profile picture upload
+router.post('/upload-profile-picture', upload.single('profilePicture'), async (req, res) => {
+  try {
+    // Extract doctor ID from JWT token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const token = authHeader.substring(7, authHeader.length);
+    const { data: userData, error: userError } = await supabase.auth.getUser(token);
+
+    if (userError || !userData.user) {
+      return res.status(401).json({ success: false, message: "Invalid token" });
+    }
+
+    const doctorId = userData.user.id;
+    
+    // Check if the user is a doctor
+    const { data: doctorData, error: doctorError } = await supabase
+      .from("doctors")
+      .select("id")
+      .eq("id", doctorId)
+      .single();
+    
+    if (doctorError || !doctorData) {
+      return res.status(403).json({ success: false, message: "User is not a doctor" });
+    }
+    
+    // Check if file exists in request
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No image file provided" });
+    }
+    
+    // Upload to Supabase Storage
+    const fileName = `doctor_${doctorId}_${Date.now()}${path.extname(req.file.originalname)}`;
+    const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+      .from('avatars')
+      .upload(fileName, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: true
+      });
+    
+    if (uploadError) {
+      console.error("Upload error:", uploadError);
+      return res.status(400).json({ success: false, message: "Failed to upload image" });
+    }
+    
+    // Get the public URL for the uploaded file
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from('avatars')
+      .getPublicUrl(fileName);
+    
+    const avatarUrl = publicUrlData.publicUrl;
+    
+    // Update the doctor record with the new avatar URL
+    const { data, error } = await supabaseAdmin
+      .from("doctors")
+      .update({
+        avatar_url: avatarUrl,
+        updated_at: new Date()
+      })
+      .eq("id", doctorId)
+      .select();
+    
+    if (error) {
+      console.error("Error updating doctor profile:", error);
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: "Profile picture uploaded successfully",
+      avatar_url: avatarUrl,
+      doctor: data[0]
+    });
+    
+  } catch (error) {
+    console.error("Error uploading profile picture:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
