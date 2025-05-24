@@ -157,10 +157,17 @@ router.put("/mark-all-read", async (req, res) => {
   }
 });
 
-// Register device token for push notifications
+// Update the device registration endpoint to handle multiple users per device
+
 router.post("/register-device", async (req, res) => {
   try {
     const { token, device_type } = req.body;
+    const requestId = Math.random().toString(36).substr(2, 9);
+
+    console.log(`[${requestId}] Device registration request:`, {
+      token: token ? token.substring(0, 20) + '...' : 'null',
+      device_type
+    });
 
     if (!token || !device_type) {
       return res.status(400).json({
@@ -187,50 +194,168 @@ router.post("/register-device", async (req, res) => {
     }
 
     const userId = userData.user.id;
+    console.log(`[${requestId}] Registering device for user: ${userId}`);
 
-    // Check if this token already exists for this user
-    const { data: existingToken, error: checkError } = await supabase
+    // CRITICAL: Remove this token from ALL other users first
+    const { error: cleanupError } = await supabaseAdmin
       .from("device_tokens")
-      .select("id")
+      .delete()
+      .eq("token", token)
+      .neq("user_id", userId);
+
+    if (cleanupError) {
+      console.error(`[${requestId}] Error during token cleanup:`, cleanupError);
+      // Continue anyway - this is not critical enough to fail the registration
+    } else {
+      console.log(`[${requestId}] Cleaned up token from other users`);
+    }
+
+    // Check if this token already exists for the current user
+    const { data: existingToken, error: checkError } = await supabaseAdmin
+      .from("device_tokens")
+      .select("id, created_at")
       .eq("token", token)
       .eq("user_id", userId)
       .maybeSingle();
 
     if (checkError) {
+      console.error(`[${requestId}] Error checking existing token:`, checkError);
       return res
         .status(400)
         .json({ success: false, message: checkError.message });
     }
 
     if (existingToken) {
-      // Token already registered, return success
+      // Token already exists for this user, just update the device_type
+      const { data: updatedToken, error: updateError } = await supabaseAdmin
+        .from("device_tokens")
+        .update({ 
+          device_type: device_type
+        })
+        .eq("id", existingToken.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error(`[${requestId}] Error updating existing token:`, updateError);
+        return res.status(400).json({ 
+          success: false, 
+          message: updateError.message 
+        });
+      }
+
+      console.log(`[${requestId}] Updated existing token for user ${userId}`);
       return res.status(200).json({
         success: true,
-        message: "Device token already registered",
+        message: "Device token updated successfully",
+        device: updatedToken,
       });
     }
 
-    // Register new token
+    // Register new token for this user (only use columns that exist in schema)
     const { data, error } = await supabaseAdmin
       .from("device_tokens")
       .insert({
         user_id: userId,
         token,
         device_type,
+        // Remove created_at as it has a default value
+        // Remove updated_at as it doesn't exist in the schema
       })
-      .select();
+      .select()
+      .single();
 
     if (error) {
-      return res.status(400).json({ success: false, message: error.message });
+      console.error(`[${requestId}] Error inserting new token:`, error);
+      return res.status(400).json({ 
+        success: false, 
+        message: error.message 
+      });
     }
+
+    console.log(`[${requestId}] Successfully registered new device token for user ${userId}`);
 
     return res.status(201).json({
       success: true,
       message: "Device registered successfully",
-      device: data[0],
+      device: data,
     });
   } catch (error) {
     console.error("Error registering device token:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+router.delete("/unregister-device", async (req, res) => {
+  try {
+    const { token } = req.body;
+    const requestId = Math.random().toString(36).substr(2, 9);
+
+    console.log(`[${requestId}] Device unregistration request for token: ${token ? token.substring(0, 20) + '...' : 'null'}`);
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: "Token is required",
+      });
+    }
+
+    // Get user ID from authentication
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      // If no auth header, just try to delete the token anyway
+      const { error } = await supabaseAdmin
+        .from("device_tokens")
+        .delete()
+        .eq("token", token);
+
+      if (error) {
+        console.error(`[${requestId}] Error deleting token without auth:`, error);
+        return res.status(400).json({ success: false, message: error.message });
+      }
+
+      console.log(`[${requestId}] Successfully deleted token without auth verification`);
+      return res.status(200).json({
+        success: true,
+        message: "Device unregistered successfully",
+      });
+    }
+
+    const authToken = authHeader.substring(7, authHeader.length);
+    const { data: userData, error: userError } = await supabase.auth.getUser(
+      authToken
+    );
+
+    const userId = userData?.user?.id;
+
+    // Delete the token (either for specific user or any user if auth failed)
+    const deleteQuery = supabaseAdmin
+      .from("device_tokens")
+      .delete()
+      .eq("token", token);
+
+    if (userId) {
+      deleteQuery.eq("user_id", userId);
+      console.log(`[${requestId}] Deleting token for specific user: ${userId}`);
+    } else {
+      console.log(`[${requestId}] Deleting token for any user (auth failed)`);
+    }
+
+    const { error } = await deleteQuery;
+
+    if (error) {
+      console.error(`[${requestId}] Error deleting device token:`, error);
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    console.log(`[${requestId}] Successfully unregistered device token`);
+
+    return res.status(200).json({
+      success: true,
+      message: "Device unregistered successfully",
+    });
+  } catch (error) {
+    console.error("Error unregistering device token:", error);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
