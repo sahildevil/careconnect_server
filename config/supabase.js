@@ -2,23 +2,18 @@ const { createClient } = require("@supabase/supabase-js");
 require("dotenv").config();
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
+if (!supabaseUrl || !supabaseKey || !supabaseServiceKey) {
   console.error("Missing Supabase credentials. Please check your .env file.");
   process.exit(1);
 }
 
-// Regular client for normal operations
-const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+// Default shared instance
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Admin client for operations requiring service role
+// Admin instance with service role key
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
     autoRefreshToken: false,
@@ -26,4 +21,22 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   },
 });
 
-module.exports = { supabase, supabaseAdmin };
+// Function to create fresh instances when needed
+const createFreshInstance = (useServiceRole = false) => {
+  return createClient(
+    supabaseUrl,
+    useServiceRole ? supabaseServiceKey : supabaseKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+};
+
+module.exports = {
+  supabase,
+  supabaseAdmin,
+  createFreshInstance,
+};

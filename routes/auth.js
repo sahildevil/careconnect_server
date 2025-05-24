@@ -236,6 +236,11 @@ router.post("/doctor-signup", async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const { email, password, userType } = req.body;
+    const requestId = Math.random().toString(36).substr(2, 9);
+
+    console.log(
+      `[${requestId}] Login attempt for email: ${email}, userType: ${userType}`
+    );
 
     if (!email || !password) {
       return res
@@ -243,69 +248,107 @@ router.post("/login", async (req, res) => {
         .json({ success: false, message: "Email and password are required" });
     }
 
-    // Sign in with email and password
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+    // Create a fresh Supabase instance for this login to avoid session conflicts
+    const { createClient } = require("@supabase/supabase-js");
+    const loginSupabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_ANON_KEY
+    );
+
+    // Sign in with email and password using fresh instance
+    const { data, error } = await loginSupabase.auth.signInWithPassword({
+      email: email.toLowerCase(),
       password,
     });
 
     if (error) {
-      return res.status(401).json({ success: false, message: error.message });
-    }
-
-    // Check if user type matches
-    const userMetadata = data.user.user_metadata;
-    if (userMetadata.user_type !== userType) {
-      return res.status(403).json({
+      console.log(`[${requestId}] Login failed: ${error.message}`);
+      return res.status(401).json({
         success: false,
-        message: `This account is not registered as a ${userType}`,
+        message: error.message,
+        requestId,
       });
     }
 
-    // Get user profile data
+    console.log(
+      `[${requestId}] Supabase login successful for user: ${data.user.id}`
+    );
+
+    // Verify user type matches
+    const userMetadata = data.user.user_metadata;
+    if (userMetadata.user_type !== userType) {
+      console.log(
+        `[${requestId}] User type mismatch: expected ${userType}, got ${userMetadata.user_type}`
+      );
+      return res.status(403).json({
+        success: false,
+        message: `This account is not registered as a ${userType}`,
+        requestId,
+      });
+    }
+
+    // Get user profile data using supabaseAdmin to ensure consistency
+    const { supabaseAdmin } = require("../config/supabase");
     let profileData = null;
+
     if (userType === "doctor") {
-      const { data: doctorData, error: doctorError } = await supabase
+      const { data: doctorData, error: doctorError } = await supabaseAdmin
         .from("doctors")
         .select("*")
         .eq("id", data.user.id)
         .single();
 
       if (doctorError) {
-        console.error("Error fetching doctor data:", doctorError);
+        console.error(
+          `[${requestId}] Error fetching doctor data:`,
+          doctorError
+        );
       } else {
         profileData = doctorData;
       }
     } else if (userType === "patient") {
-      const { data: patientData, error: patientError } = await supabase
+      const { data: patientData, error: patientError } = await supabaseAdmin
         .from("patients")
         .select("*")
         .eq("id", data.user.id)
         .single();
 
       if (patientError) {
-        console.error("Error fetching patient data:", patientError);
+        console.error(
+          `[${requestId}] Error fetching patient data:`,
+          patientError
+        );
       } else {
         profileData = patientData;
       }
     }
 
+    const userResponse = {
+      id: data.user.id,
+      email: data.user.email,
+      user_type: userType,
+      name: profileData?.name || "",
+      profile: profileData,
+    };
+
+    console.log(
+      `[${requestId}] Login successful for user: ${data.user.id} (${userType})`
+    );
+
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      user: {
-        id: data.user.id,
-        email: data.user.email,
-        name: userMetadata.name,
-        user_type: userMetadata.user_type,
-        profile: profileData,
-      },
-      token: data.session.access_token, // Make sure to include this
-      session: data.session,
+      user: userResponse,
+      token: data.session.access_token,
+      requestId,
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Error logging in:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    console.error("Error during login:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error during login",
+    });
   }
 });
 
@@ -486,7 +529,7 @@ router.get("/profile/:userId", async (req, res) => {
   }
 });
 
-// Add this improved validate-token endpoint
+// Fix the validate-token endpoint to properly handle concurrent sessions
 
 router.get("/validate-token", async (req, res) => {
   try {
@@ -500,68 +543,122 @@ router.get("/validate-token", async (req, res) => {
     }
 
     const token = authHeader.substring(7, authHeader.length);
+    const requestId = Math.random().toString(36).substr(2, 9);
 
-    // Verify the JWT token with Supabase
-    const { data, error } = await supabase.auth.getUser(token);
+    console.log(
+      `[${requestId}] Validating token: ${token.substring(
+        0,
+        20
+      )}... at ${new Date().toISOString()}`
+    );
 
-    if (error || !data.user) {
-      console.log("Token validation failed:", error?.message);
-      return res.status(401).json({
-        success: false,
-        message: "Invalid or expired token",
-      });
-    }
+    try {
+      // CRITICAL: Use a fresh Supabase instance for each validation to avoid conflicts
+      const { createClient } = require("@supabase/supabase-js");
+      const freshSupabase = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_ANON_KEY
+      );
 
-    // Get updated user profile
-    const userId = data.user.id;
-    let userProfile = null;
+      // Verify the JWT token with Supabase using fresh instance
+      const { data, error } = await freshSupabase.auth.getUser(token);
 
-    // Check if it's a doctor
-    const { data: doctorData, error: doctorError } = await supabase
-      .from("doctors")
-      .select("*")
-      .eq("id", userId)
-      .single();
+      if (error) {
+        console.log(`[${requestId}] Token validation failed: ${error.message}`);
+        return res.status(401).json({
+          success: false,
+          message: "Invalid or expired token",
+          error: error.message,
+          requestId,
+        });
+      }
 
-    if (doctorData && !doctorError) {
-      userProfile = {
-        id: userId,
-        email: data.user.email,
-        name: doctorData.name,
-        user_type: "doctor",
-        profile: doctorData,
-      };
-    } else {
-      // Check if it's a patient
-      const { data: patientData, error: patientError } = await supabase
-        .from("patients")
+      if (!data || !data.user) {
+        console.log(`[${requestId}] No user data found for token`);
+        return res.status(401).json({
+          success: false,
+          message: "Invalid token - no user data",
+          requestId,
+        });
+      }
+
+      const userId = data.user.id;
+      console.log(`[${requestId}] Token validated for user: ${userId}`);
+
+      // Get updated user profile with isolation
+      let userProfile = null;
+
+      // Use supabaseAdmin for consistent data access
+      const { supabaseAdmin } = require("../config/supabase");
+
+      // Check if it's a doctor first
+      const { data: doctorData, error: doctorError } = await supabaseAdmin
+        .from("doctors")
         .select("*")
         .eq("id", userId)
         .single();
 
-      if (patientData && !patientError) {
+      if (doctorData && !doctorError) {
         userProfile = {
           id: userId,
           email: data.user.email,
-          name: patientData.name,
-          user_type: "patient",
-          profile: patientData,
+          name: doctorData.name,
+          user_type: "doctor",
+          profile: doctorData,
         };
-      }
-    }
+      } else {
+        // Check if it's a patient
+        const { data: patientData, error: patientError } = await supabaseAdmin
+          .from("patients")
+          .select("*")
+          .eq("id", userId)
+          .single();
 
-    if (!userProfile) {
-      return res.status(404).json({
+        if (patientData && !patientError) {
+          userProfile = {
+            id: userId,
+            email: data.user.email,
+            name: patientData.name,
+            user_type: "patient",
+            profile: patientData,
+          };
+        }
+      }
+
+      if (!userProfile) {
+        console.log(
+          `[${requestId}] User profile not found for user: ${userId}`
+        );
+        return res.status(404).json({
+          success: false,
+          message: "User profile not found",
+          requestId,
+        });
+      }
+
+      console.log(
+        `[${requestId}] Token validation successful for user: ${userId} (${userProfile.user_type})`
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: "Token is valid",
+        user: userProfile,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    } catch (supabaseError) {
+      console.error(
+        `[${requestId}] Supabase error during token validation:`,
+        supabaseError
+      );
+      return res.status(401).json({
         success: false,
-        message: "User profile not found",
+        message: "Token validation failed",
+        error: supabaseError.message,
+        requestId,
       });
     }
-
-    return res.status(200).json({
-      success: true,
-      message: "Token is valid",
-      user: userProfile,
-    });
   } catch (error) {
     console.error("Error validating token:", error);
     return res.status(500).json({
