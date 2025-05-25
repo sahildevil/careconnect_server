@@ -174,14 +174,7 @@ cron.schedule('*/5 * * * *', async () => {
 - Sends push notifications with appointment details
 - Includes clinic location and directions
 - Prevents duplicate reminders
-
-## 🛡️ Security Features
-
-- **Input Validation**: Comprehensive request validation
-- **SQL Injection Prevention**: Parameterized queries via Supabase
-- **CORS Configuration**: Proper cross-origin request handling
-- **Error Sanitization**: Secure error messages for production
-- **Token Management**: Automatic device token cleanup
+- CORS Configuration: Proper cross-origin request handling
 
 ## 📝 Environment Variables
 
@@ -196,54 +189,8 @@ cron.schedule('*/5 * * * *', async () => {
 | `PORT` | Server port number | ❌ (default: 3000) |
 | `NODE_ENV` | Environment mode | ❌ (default: development) |
 
-## 🧪 Testing
-
-### API Testing with Postman
-
-1. **Import Collection**: Use the provided Postman collection
-2. **Set Environment**: Configure base URL and authentication tokens
-3. **Run Tests**: Execute automated test scenarios
-
-### Manual Testing
-
-```bash
-# Test authentication
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"password123"}'
-
-# Test doctor listing
-curl -X GET http://localhost:3000/api/doctors \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
-## 📊 Monitoring & Health Checks
-
-### Health Endpoint
-```bash
-GET /health
-```
-
-Response:
-```json
-{
-  "status": "OK",
-  "message": "CareConnect Server is running",
-  "timestamp": "2024-01-XX...",
-  "uptime": "2h 30m 15s"
-}
-```
-
-### Logging
-- Request/Response logging
-- Error tracking with stack traces
-- Performance monitoring
-- Database query logging
-
-
 ## 🎯 Future Scope
 
-- [ ] WebSocket integration for real-time updates
 - [ ] Advanced notification scheduling
 - [ ] API rate limiting implementation
 - [ ] Comprehensive logging and monitoring
@@ -254,8 +201,8 @@ Response:
 
 ## 👥 Authors
 
-- [@sahildevil](https://github.com/sahildevil) - Backend Development
-- [@Neelancy1504](https://github.com/Neelancy1504) - API Design & Testing
+- [@sahildevil](https://github.com/sahildevil)
+- [@Neelancy1504](https://github.com/Neelancy1504)
 ---
 
 **CareConnect Server** - Powering healthcare connections through robust, secure, and scalable backend services. 🏥💙
