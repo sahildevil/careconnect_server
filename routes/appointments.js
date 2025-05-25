@@ -3,6 +3,7 @@ const router = express.Router();
 const { supabase, supabaseAdmin } = require("../config/supabase");
 const { sendNotification } = require("./notifications");
 const reminderService = require("../services/reminderService");
+const { formatAppointmentMessage } = require("../utils/timeUtils");
 
 // Get user appointments
 router.get("/user/:userId", async (req, res) => {
@@ -297,7 +298,6 @@ router.get("/patient", async (req, res) => {
     );
 
     try {
-
       const { data, error: authError } = await supabase.auth.getUser(token);
 
       if (authError || !data || !data.user) {
@@ -535,7 +535,7 @@ router.put("/:id/approve", async (req, res) => {
     console.log(`[${requestId}] Approval request for appointment ${id}:`, {
       approved,
       notes,
-      body: req.body
+      body: req.body,
     });
 
     if (approved === undefined) {
@@ -543,7 +543,7 @@ router.put("/:id/approve", async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "The 'approved' field is required (true or false)",
-        requestId
+        requestId,
       });
     }
 
@@ -554,19 +554,21 @@ router.put("/:id/approve", async (req, res) => {
       return res.status(401).json({
         success: false,
         message: "Authentication required",
-        requestId
+        requestId,
       });
     }
 
     const token = authHeader.substring(7, authHeader.length);
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
+    const { data: userData, error: userError } = await supabase.auth.getUser(
+      token
+    );
 
     if (userError || !userData.user) {
       console.log(`[${requestId}] Authentication failed:`, userError?.message);
       return res.status(401).json({
         success: false,
         message: "Invalid authentication token",
-        requestId
+        requestId,
       });
     }
 
@@ -574,9 +576,11 @@ router.put("/:id/approve", async (req, res) => {
     console.log(`[${requestId}] Request from doctor: ${doctorId}`);
 
     // Fetch appointment details to verify
-    const { data: appointmentData, error: appointmentError } = await supabaseAdmin
-      .from("appointments")
-      .select(`
+    const { data: appointmentData, error: appointmentError } =
+      await supabaseAdmin
+        .from("appointments")
+        .select(
+          `
         *,
         patients:patient_id (
           id,
@@ -588,35 +592,41 @@ router.put("/:id/approve", async (req, res) => {
           name,
           specialty
         )
-      `)
-      .eq("id", id)
-      .single();
+      `
+        )
+        .eq("id", id)
+        .single();
 
     if (appointmentError) {
-      console.error(`[${requestId}] Error fetching appointment:`, appointmentError);
-      return res.status(400).json({ 
-        success: false, 
+      console.error(
+        `[${requestId}] Error fetching appointment:`,
+        appointmentError
+      );
+      return res.status(400).json({
+        success: false,
         message: appointmentError.message,
-        requestId 
+        requestId,
       });
     }
 
     if (!appointmentData) {
       console.log(`[${requestId}] Appointment not found: ${id}`);
-      return res.status(404).json({ 
-        success: false, 
+      return res.status(404).json({
+        success: false,
         message: "Appointment not found",
-        requestId 
+        requestId,
       });
     }
 
     // Verify the doctor has permission to approve this appointment
     if (appointmentData.doctor_id !== doctorId) {
-      console.log(`[${requestId}] Access denied - doctor ${doctorId} cannot approve appointment for doctor ${appointmentData.doctor_id}`);
+      console.log(
+        `[${requestId}] Access denied - doctor ${doctorId} cannot approve appointment for doctor ${appointmentData.doctor_id}`
+      );
       return res.status(403).json({
         success: false,
         message: "You don't have permission to approve this appointment",
-        requestId
+        requestId,
       });
     }
 
@@ -625,16 +635,18 @@ router.put("/:id/approve", async (req, res) => {
       currentStatus: appointmentData.status,
       patientId: appointmentData.patient_id,
       doctorId: appointmentData.doctor_id,
-      date: appointmentData.appointment_date
+      date: appointmentData.appointment_date,
     });
 
     // Check if appointment is in a state that can be approved/rejected
-    if (appointmentData.status !== 'pending') {
-      console.log(`[${requestId}] Cannot approve/reject appointment with status: ${appointmentData.status}`);
+    if (appointmentData.status !== "pending") {
+      console.log(
+        `[${requestId}] Cannot approve/reject appointment with status: ${appointmentData.status}`
+      );
       return res.status(400).json({
         success: false,
         message: `Cannot approve/reject appointment with status: ${appointmentData.status}`,
-        requestId
+        requestId,
       });
     }
 
@@ -656,7 +668,8 @@ router.put("/:id/approve", async (req, res) => {
       .from("appointments")
       .update(updateData)
       .eq("id", id)
-      .select(`
+      .select(
+        `
         *,
         patients:patient_id (
           id,
@@ -668,83 +681,93 @@ router.put("/:id/approve", async (req, res) => {
           name,
           specialty
         )
-      `)
+      `
+      )
       .single();
 
     if (updateError) {
       console.error(`[${requestId}] Error updating appointment:`, updateError);
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         message: updateError.message,
-        requestId 
+        requestId,
       });
     }
 
     console.log(`[${requestId}] Appointment updated successfully:`, {
       id: updatedData.id,
       newStatus: updatedData.status,
-      updatedAt: updatedData.updated_at
+      updatedAt: updatedData.updated_at,
     });
 
     // Send notification to patient
     if (appointmentData.patient_id) {
       const patientId = appointmentData.patient_id;
       const doctorName = appointmentData.doctors?.name || "Your doctor";
-      const appointmentDate = new Date(appointmentData.appointment_date);
-
-      // Format appointment date in a readable format
-      const formattedDate = appointmentDate.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
-
-      const formattedTime = appointmentDate.toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
 
       try {
         if (approved) {
           // Send confirmation notification
+          const message = formatAppointmentMessage(
+            doctorName,
+            appointmentData.appointment_date,
+            "confirmed"
+          );
+
           const notificationResult = await sendNotification(
             patientId,
             "Appointment Confirmed",
-            `Your appointment with Dr. ${doctorName} on ${formattedDate} at ${formattedTime} has been confirmed.`,
+            message,
             "appointment_confirmed",
             id
           );
-          console.log(`[${requestId}] Confirmation notification result:`, notificationResult.success);
+          console.log(
+            `[${requestId}] Confirmation notification result:`,
+            notificationResult.success
+          );
         } else {
           // Send rejection notification
-          const rejectionMessage = `Your appointment with Dr. ${doctorName} on ${formattedDate} at ${formattedTime} was declined.${notes ? ` Reason: ${notes}` : ""}`;
+          const message = formatAppointmentMessage(
+            doctorName,
+            appointmentData.appointment_date,
+            "declined",
+            notes
+          );
+
           const notificationResult = await sendNotification(
             patientId,
             "Appointment Declined",
-            rejectionMessage,
+            message,
             "appointment_rejected",
             id
           );
-          console.log(`[${requestId}] Rejection notification result:`, notificationResult.success);
+          console.log(
+            `[${requestId}] Rejection notification result:`,
+            notificationResult.success
+          );
         }
       } catch (notificationError) {
-        console.error(`[${requestId}] Error sending notification:`, notificationError);
+        console.error(
+          `[${requestId}] Error sending notification:`,
+          notificationError
+        );
       }
     }
 
     return res.status(200).json({
       success: true,
-      message: approved ? "Appointment confirmed successfully" : "Appointment rejected successfully",
+      message: approved
+        ? "Appointment confirmed successfully"
+        : "Appointment rejected successfully",
       appointment: updatedData,
-      requestId
+      requestId,
     });
-
   } catch (error) {
     console.error("Error in appointment approval:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Server error during appointment approval",
-      error: error.message 
+      error: error.message,
     });
   }
 });

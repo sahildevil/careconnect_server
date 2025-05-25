@@ -1,6 +1,7 @@
 const cron = require("node-cron");
 const { supabase } = require("../config/supabase");
 const { sendNotification } = require("../routes/notifications");
+const { formatAppointmentMessage } = require("../utils/timeUtils");
 
 class ReminderService {
   constructor() {
@@ -106,24 +107,16 @@ class ReminderService {
   // Send reminder notification for a specific appointment
   async sendAppointmentReminder(appointment) {
     try {
-      const appointmentDate = new Date(appointment.appointment_date);
       const doctorData = appointment.doctors;
       const patientData = appointment.patients;
 
-      // Format appointment time
-      const formattedDate = appointmentDate.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
-      const formattedTime = appointmentDate.toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-
-      // Create reminder message
+      // Create reminder message using utility function
       const title = "Appointment Reminder";
-      let message = `Your appointment with Dr. ${doctorData.name} is in 1 hour (${formattedTime}).`;
+      let message = formatAppointmentMessage(
+        doctorData.name,
+        appointment.appointment_date, // This is already in UTC from database
+        "reminder"
+      );
 
       // Add location info if available
       if (doctorData.latitude && doctorData.longitude) {
@@ -149,8 +142,9 @@ class ReminderService {
           })
           .eq("id", appointment.id);
 
+        const { time } = formatDateTimeForIST(appointment.appointment_date);
         console.log(
-          `Reminder sent for appointment ${appointment.id} (Patient: ${patientData.name}, Doctor: ${doctorData.name})`
+          `Reminder sent for appointment ${appointment.id} (Patient: ${patientData.name}, Doctor: ${doctorData.name}) at ${time} IST`
         );
       } else {
         console.error(
