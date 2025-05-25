@@ -2,11 +2,7 @@
 
 Backend server for the CareConnect healthcare application - a comprehensive API service that powers the connection between patients and doctors through secure appointment management, real-time notifications, and healthcare data management.
 
-![CareConnect Server](./assets/server-banner.png)
-
 **Client Repo** - https://github.com/sahildevil/careconnect
-
-**API Documentation** - Coming Soon
 
 **Live Server** - https://careconnect-server.vercel.app
 
@@ -37,12 +33,6 @@ Backend server for the CareConnect healthcare application - a comprehensive API 
 - **Device Management**: Multi-device token registration and cleanup
 - **Notification History**: Complete notification tracking and read status
 
-### ⏰ Automated Services
-- **Cron Job Reminders**: Automated appointment reminder system
-- **Smart Scheduling**: 1-hour advance reminders for confirmed appointments
-- **Manual Triggers**: Admin capability to send manual reminders
-- **Location Integration**: Include clinic directions in reminder notifications
-
 ## 🛠️ Technology Stack
 
 ### Backend
@@ -53,7 +43,7 @@ Backend server for the CareConnect healthcare application - a comprehensive API 
 ### Services
 - **Firebase Cloud Messaging** - Push notifications
 - **Supabase Storage** - File upload and storage
-- **Node-cron** - Automated task scheduling
+- **Node-cron** - Automated task scheduling (Future Scope)
 - **Multer** - File upload handling
 
 ### Development
@@ -224,7 +214,7 @@ curl -X POST http://localhost:3000/api/auth/login \
 
 # Test doctor listing
 curl -X GET http://localhost:3000/api/doctors \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 ## 📊 Monitoring & Health Checks

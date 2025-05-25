@@ -26,7 +26,7 @@ router.get("/", async (req, res) => {
     const { data, error } = await supabase
       .from("doctors")
       .select("*")
-      .eq("is_visible", true); // Only get doctors who have completed onboarding
+      .eq("is_visible", true); // Sahil - Doctors who have completed onboarding
 
     if (error) {
       return res.status(400).json({ success: false, message: error.message });
@@ -117,7 +117,6 @@ router.post("/complete-onboarding", async (req, res) => {
 
 router.put("/profile", async (req, res) => {
   try {
-    // Extract doctor ID from JWT token (assuming you have auth middleware)
     const doctorId = req.user?.id;
     
     if (!doctorId) {
@@ -168,6 +167,7 @@ router.put("/profile", async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
 router.get("/onboarding-status/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -206,7 +206,7 @@ router.get("/onboarding-status/:id", async (req, res) => {
 // Add the endpoint for profile picture upload
 router.post('/upload-profile-picture', upload.single('profilePicture'), async (req, res) => {
   try {
-    // Extract doctor ID from JWT token
+    // Extract doctor ID from token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ success: false, message: "Authentication required" });

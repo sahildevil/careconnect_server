@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { supabase, supabaseAdmin } = require("../config/supabase");
 
-// Register a patient - Update this section
+// Register a patient
 router.post("/signup", async (req, res) => {
   try {
     const { name, email, password, phone_number } = req.body;
@@ -13,7 +13,6 @@ router.post("/signup", async (req, res) => {
         .json({ success: false, message: "All fields are required" });
     }
 
-    // Directly try to create the user without checking first
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email: email.toLowerCase(),
@@ -28,7 +27,6 @@ router.post("/signup", async (req, res) => {
     if (authError) {
       console.error("Auth error:", authError);
 
-      // Check if this is a duplicate email error
       if (
         authError.message &&
         (authError.message.includes("already been registered") ||
@@ -45,8 +43,6 @@ router.post("/signup", async (req, res) => {
         message: authError.message,
       });
     }
-
-    // Rest of your code remains the same...
     if (!authData || !authData.user) {
       return res.status(500).json({
         success: false,
@@ -74,8 +70,6 @@ router.post("/signup", async (req, res) => {
 
     if (profileError) {
       console.error("Patient profile creation error:", profileError);
-
-      // Try to clean up the auth user if profile creation fails
       try {
         await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
       } catch (deleteError) {
@@ -106,7 +100,7 @@ router.post("/signup", async (req, res) => {
   }
 });
 
-// Register a doctor - Update this section
+// Register a doctor
 router.post("/doctor-signup", async (req, res) => {
   try {
     console.log("Doctor signup request:", req.body);
@@ -126,9 +120,6 @@ router.post("/doctor-signup", async (req, res) => {
         message: "All required fields must be provided",
       });
     }
-
-    // Directly try to create the user without checking first
-    // If the email exists, Supabase will return an appropriate error
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email: email.toLowerCase(),
@@ -141,11 +132,8 @@ router.post("/doctor-signup", async (req, res) => {
         },
       });
 
-    // Handle specific auth error for existing user
     if (authError) {
       console.error("Auth error:", authError);
-
-      // Check if this is a duplicate email error
       if (
         authError.message &&
         (authError.message.includes("already been registered") ||
@@ -162,8 +150,6 @@ router.post("/doctor-signup", async (req, res) => {
         message: authError.message || "Authentication error",
       });
     }
-
-    // Rest of your code remains the same
     if (!authData || !authData.user) {
       return res.status(500).json({
         success: false,
@@ -185,22 +171,19 @@ router.post("/doctor-signup", async (req, res) => {
       available_hours: null,
       avatar_url: null,
       location_link: null,
-      onboarding_complete: false, // Flag to track onboarding status
-      is_visible: false, // Doctor not visible to patients until onboarding is complete
+      onboarding_complete: false, 
+      is_visible: false, 
       created_at: new Date(),
       updated_at: new Date(),
     };
 
     console.log("Inserting doctor record:", doctorData);
-    // Use supabaseAdmin instead of supabase for insertion
     const { error: doctorError } = await supabaseAdmin
       .from("doctors")
       .insert(doctorData);
 
     if (doctorError) {
       console.error("Doctor creation error:", doctorError);
-
-      // Clean up the auth user if doctor profile creation fails
       try {
         await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
         console.log("Deleted auth user after doctor creation failed");
@@ -247,8 +230,6 @@ router.post("/login", async (req, res) => {
         .status(400)
         .json({ success: false, message: "Email and password are required" });
     }
-
-    // Create a fresh Supabase instance for this login to avoid session conflicts
     const { createClient } = require("@supabase/supabase-js");
     const loginSupabase = createClient(
       process.env.SUPABASE_URL,
@@ -398,7 +379,6 @@ router.post("/logout", async (req, res) => {
 });
 
 // Update user location
-// This should be in your server's auth.js routes file
 router.post("/update-location", async (req, res) => {
   try {
     console.log("Received location update request:", req.body);
@@ -452,7 +432,6 @@ router.post("/update-location", async (req, res) => {
 router.get("/profile/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-
     // Verify the token matches the requested user ID
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -470,7 +449,6 @@ router.get("/profile/:userId", async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid token" });
     }
 
-    // Ensure the token user matches the requested user
     if (userData.user.id !== userId) {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
@@ -529,8 +507,7 @@ router.get("/profile/:userId", async (req, res) => {
   }
 });
 
-// Fix the validate-token endpoint to properly handle concurrent sessions
-
+// Validate token endpoint
 router.get("/validate-token", async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -553,14 +530,12 @@ router.get("/validate-token", async (req, res) => {
     );
 
     try {
-      // CRITICAL: Use a fresh Supabase instance for each validation to avoid conflicts
       const { createClient } = require("@supabase/supabase-js");
       const freshSupabase = createClient(
         process.env.SUPABASE_URL,
         process.env.SUPABASE_ANON_KEY
       );
 
-      // Verify the JWT token with Supabase using fresh instance
       const { data, error } = await freshSupabase.auth.getUser(token);
 
       if (error) {
@@ -668,7 +643,7 @@ router.get("/validate-token", async (req, res) => {
   }
 });
 
-// Add this endpoint if it doesn't exist already
+// Get user profile (generic endpoint for both patient and doctor)
 router.get("/profile", async (req, res) => {
   try {
     // Get user ID from the auth token

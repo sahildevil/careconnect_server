@@ -23,7 +23,6 @@ const errorHandler = (err, req, res, next) => {
 
   // Handle database errors
   if (err.code && err.code.startsWith("23")) {
-    // Database constraint violations typically start with '23'
     return res.status(400).json({
       success: false,
       message: "Database constraint violation",

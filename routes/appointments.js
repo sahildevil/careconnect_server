@@ -12,7 +12,7 @@ router.get("/user/:userId", async (req, res) => {
     const { data, error } = await supabase
       .from("appointments")
       .select("*, doctors(*)")
-      .eq("patient_id", userId); // Changed from user_id to patient_id
+      .eq("patient_id", userId);
 
     if (error) {
       return res.status(400).json({ success: false, message: error.message });
@@ -37,7 +37,6 @@ router.post("/", async (req, res) => {
       appointment_type,
     } = req.body;
 
-    // Use patient_id as primary, fallback to user_id if patient_id isn't provided
     const actualPatientId = patient_id || user_id;
 
     if (!actualPatientId || !doctor_id || !appointment_date) {
@@ -54,7 +53,6 @@ router.post("/", async (req, res) => {
       appointment_type: appointment_type || "consultation",
     });
 
-    // Use supabaseAdmin instead of supabase to bypass RLS
     const { data, error } = await supabaseAdmin
       .from("appointments")
       .insert({
@@ -111,8 +109,7 @@ router.put("/:id/cancel", async (req, res) => {
   }
 });
 
-// Update the doctor appointments endpoint with better debugging
-
+// Doctor appointments endpoint
 router.get("/doctor", async (req, res) => {
   try {
     const { doctor_id } = req.query;
@@ -173,8 +170,6 @@ router.get("/doctor", async (req, res) => {
     console.log(
       `[${requestId}] Doctor verified: ${doctorCheck.name} (ID: ${doctorCheck.id})`
     );
-
-    // CRITICAL DEBUG: Check if there are ANY appointments for this doctor
     const { data: allAppointments, error: allError } = await supabaseAdmin
       .from("appointments")
       .select("id, doctor_id, patient_id, status, appointment_date")
@@ -280,8 +275,7 @@ router.get("/doctor", async (req, res) => {
   }
 });
 
-// Update the patient appointments endpoint
-
+// Patient appointments endpoint
 router.get("/patient", async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -293,7 +287,7 @@ router.get("/patient", async (req, res) => {
     }
 
     const token = authHeader.substring(7, authHeader.length);
-    const requestId = Math.random().toString(36).substr(2, 9); // Generate unique request ID
+    const requestId = Math.random().toString(36).substr(2, 9);
 
     console.log(
       `[${requestId}] Processing appointment request with token: ${token.substring(
@@ -303,7 +297,7 @@ router.get("/patient", async (req, res) => {
     );
 
     try {
-      // Use a separate Supabase client instance to avoid conflicts
+
       const { data, error: authError } = await supabase.auth.getUser(token);
 
       if (authError || !data || !data.user) {
@@ -315,14 +309,10 @@ router.get("/patient", async (req, res) => {
 
       const patientId = data.user.id;
       console.log(`[${requestId}] Got patient ID from token: ${patientId}`);
-
-      // Add timestamp to ensure we're getting fresh data
       const queryTimestamp = new Date().toISOString();
       console.log(
         `[${requestId}] Using patient ID: ${patientId} at ${queryTimestamp}`
       );
-
-      // Use supabaseAdmin to bypass RLS and ensure consistent data access
       const { data: appointments, error: appointmentsError } =
         await supabaseAdmin
           .from("appointments")
@@ -364,8 +354,7 @@ router.get("/patient", async (req, res) => {
   }
 });
 
-// Update the appointment detail endpoint with better error handling
-
+// Appointment detail endpoint
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -436,7 +425,7 @@ router.get("/:id", async (req, res) => {
       });
     }
 
-    // Now fetch the full appointment details
+    // Fetch the full appointment details
     const { data, error } = await supabaseAdmin
       .from("appointments")
       .select(
@@ -535,7 +524,7 @@ router.put("/:id/status", async (req, res) => {
   }
 });
 
-// Update the approval endpoint with better debugging
+// Approval endpoint with better debugging
 
 router.put("/:id/approve", async (req, res) => {
   try {
@@ -584,7 +573,7 @@ router.put("/:id/approve", async (req, res) => {
     const doctorId = userData.user.id;
     console.log(`[${requestId}] Request from doctor: ${doctorId}`);
 
-    // First, get the appointment to verify doctor has access and get patient info
+    // Fetch appointment details to verify
     const { data: appointmentData, error: appointmentError } = await supabaseAdmin
       .from("appointments")
       .select(`
@@ -656,8 +645,6 @@ router.put("/:id/approve", async (req, res) => {
       status: newStatus,
       updated_at: new Date().toISOString(),
     };
-
-    // Add notes if provided
     if (notes) {
       updateData.notes = notes;
     }
@@ -742,7 +729,6 @@ router.put("/:id/approve", async (req, res) => {
         }
       } catch (notificationError) {
         console.error(`[${requestId}] Error sending notification:`, notificationError);
-        // Don't fail the request if notification fails
       }
     }
 
@@ -763,8 +749,6 @@ router.put("/:id/approve", async (req, res) => {
   }
 });
 
-// Update the available slots endpoint
-
 // Get available slots for a doctor
 router.get("/available-slots/:doctorId", async (req, res) => {
   try {
@@ -784,8 +768,7 @@ router.get("/available-slots/:doctorId", async (req, res) => {
         message: "Date parameter is required (YYYY-MM-DD format)",
       });
     }
-
-    // IMPORTANT: Verify authentication to ensure proper user context
+    // Verify authentication
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
@@ -827,8 +810,6 @@ router.get("/available-slots/:doctorId", async (req, res) => {
       endDate.toISOString()
     );
 
-    // CRITICAL: Use supabaseAdmin to bypass RLS and get ALL appointments for this doctor/date
-    // This ensures we get the complete picture regardless of which user is asking
     const { data: bookedAppointments, error } = await supabaseAdmin
       .from("appointments")
       .select("appointment_date, status, patient_id, patients:patient_id(name)")

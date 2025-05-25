@@ -3,7 +3,6 @@ const router = express.Router();
 const { supabase, supabaseAdmin } = require("../config/supabase");
 const admin = require("firebase-admin");
 
-// Use environment variables instead of JSON file
 const serviceAccount = {
   type: "service_account",
   project_id: process.env.FIREBASE_PROJECT_ID,
@@ -18,7 +17,6 @@ const serviceAccount = {
   universe_domain: "googleapis.com",
 };
 
-// Initialize Firebase Admin only if not already initialized
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
@@ -157,8 +155,7 @@ router.put("/mark-all-read", async (req, res) => {
   }
 });
 
-// Update the device registration endpoint to handle multiple users per device
-
+// Register a device token for push notifications
 router.post("/register-device", async (req, res) => {
   try {
     const { token, device_type } = req.body;
@@ -205,7 +202,7 @@ router.post("/register-device", async (req, res) => {
 
     if (cleanupError) {
       console.error(`[${requestId}] Error during token cleanup:`, cleanupError);
-      // Continue anyway - this is not critical enough to fail the registration
+      // Continue anyway
     } else {
       console.log(`[${requestId}] Cleaned up token from other users`);
     }
@@ -259,8 +256,6 @@ router.post("/register-device", async (req, res) => {
         user_id: userId,
         token,
         device_type,
-        // Remove created_at as it has a default value
-        // Remove updated_at as it doesn't exist in the schema
       })
       .select()
       .single();
@@ -484,7 +479,6 @@ async function sendNotification(
   }
 }
 
-// Export the router and the notification function
 module.exports = {
   router,
   sendNotification,

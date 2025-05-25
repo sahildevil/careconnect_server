@@ -29,18 +29,17 @@ app.get("/health", (req, res) => {
 
 const errorHandler = require("./middleware/errorHandler");
 
-// After your routes
+// 404 Not Found handler
 app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-
   // Start the reminder service
   reminderService.start();
   console.log("Appointment reminder service initialized");
 });
 
-// Graceful shutdown
+// Shutdown
 process.on("SIGINT", () => {
   console.log("Shutting down server...");
   reminderService.stop();
